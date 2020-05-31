@@ -1,3 +1,4 @@
+import { Jeopardy } from './jeopardy';
 import { Socket } from 'socket.io';
 import { User, ChatMessage, NumberDict, StringDict } from '.';
 import Redis from 'ioredis';
@@ -33,6 +34,7 @@ export class Room {
   public creationTime: Date = new Date();
   private vmManagers: { standard: VMManager; large: VMManager } | undefined;
   public isRoomDirty = false; // Indicates an unattended room needs to be saved, e.g. we unassign a VM from an empty room
+  private jpd: Jeopardy | null = null;
 
   constructor(
     io: SocketIO.Server,
@@ -46,6 +48,10 @@ export class Room {
 
     if (roomData) {
       this.deserialize(roomData);
+    }
+
+    if (!this.jpd) {
+      this.jpd = new Jeopardy(io, roomId, this.roster, this);
     }
 
     setInterval(() => {
@@ -295,6 +301,7 @@ export class Room {
       chat: this.chat,
       vBrowser: this.vBrowser,
       creationTime: this.creationTime,
+      jpd: this.jpd,
     });
   };
 
@@ -319,6 +326,15 @@ export class Room {
     }
     if (roomObj.creationTime) {
       this.creationTime = new Date(roomObj.creationTime);
+    }
+    if (roomObj.jpd) {
+      this.jpd = new Jeopardy(
+        this.io,
+        this.roomId,
+        this.roster,
+        this,
+        roomObj.jpd
+      );
     }
   };
 

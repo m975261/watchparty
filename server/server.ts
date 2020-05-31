@@ -198,6 +198,7 @@ app.get('/stats', async (req, res) => {
     const fileShareStarts = await getRedisCountDay('fileShareStarts');
     const videoChatStarts = await getRedisCountDay('videoChatStarts');
     const connectStarts = await getRedisCountDay('connectStarts');
+    const nonTrivialJudges = await redis.llen('jpd:nonTrivialJudges');
 
     res.json({
       roomCount: rooms.size,
@@ -227,6 +228,7 @@ app.get('/stats', async (req, res) => {
       currentScreenShare,
       currentFileShare,
       currentVideoChat,
+      nonTrivialJudges,
       rooms: roomData,
     });
   } else {
