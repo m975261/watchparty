@@ -24,11 +24,13 @@ import { Client } from 'pg';
 import { getStartOfDay } from './utils/time';
 import { getBgVMManagers, getSessionLimitSeconds } from './vm/utils';
 import { hashString } from './utils/string';
-import { insertObject } from './utils/postgres';
+import { insertObject, upsertObject } from './utils/postgres';
 import axios from 'axios';
 import crypto from 'crypto';
 import zlib from 'zlib';
 import util from 'util';
+import { Intents } from 'discord.js';
+import { DiscordBot } from './utils/discord';
 
 const gzip = util.promisify(zlib.gzip);
 
@@ -55,6 +57,23 @@ if (config.DATABASE_URL) {
     ssl: { rejectUnauthorized: false },
   });
   postgres.connect();
+}
+
+let discordBot: DiscordBot;
+if (
+  config.DISCORD_BOT_TOKEN &&
+  config.DISCORD_SERVER_ID &&
+  config.DISCORD_SUB_ROLE_ID
+) {
+  discordBot = new DiscordBot({
+    intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MEMBERS],
+  });
+  discordBot.once('ready', () => {
+    console.log(`Discord Bot "${discordBot?.user?.username}" ready`);
+  });
+  if (!discordBot.isReady()) {
+    discordBot.login(config.DISCORD_BOT_TOKEN);
+  }
 }
 
 const names = Moniker.generator([
@@ -109,6 +128,79 @@ app.use(bodyParser.raw({ type: 'text/plain', limit: 1000000 }));
 
 app.get('/ping', (_req, res) => {
   res.json('pong');
+});
+
+app.post('/discord/auth', async (req, res) => {
+  const decoded = await validateUserToken(req.body?.uid, req.body?.token);
+  if (!decoded) {
+    return res.status(400).json({ error: 'invalid user token' });
+  }
+  const customer = await getCustomerByEmail(decoded.email as string);
+  const isSubscriber = Boolean(
+    customer?.subscriptions?.data?.find((sub) => sub?.status === 'active')
+  );
+  if (!isSubscriber) {
+    return res.status(400).json({ error: 'not subscribed' });
+  }
+  if (!postgres || !discordBot) {
+    return res.sendStatus(500);
+  }
+  try {
+    const user = await discordBot.assignRole(
+      req.body?.username,
+      req.body?.discriminator
+    );
+    if (!user) {
+      return res.status(400).json({
+        error: 'Discord account not found. Please join our Discord server.',
+      });
+    }
+    await upsertObject(
+      postgres,
+      'account',
+      {
+        discordUsername: req.body?.username,
+        discordDiscriminator: req.body?.discriminator,
+        email: decoded.email,
+      },
+      { email: decoded.email }
+    );
+  } catch (e) {
+    console.error(e);
+    return res.sendStatus(500);
+  }
+  return res.status(200).json({});
+});
+
+app.delete('/discord/delete', async (req, res) => {
+  const decoded = await validateUserToken(
+    req.body?.uid as string,
+    req.body?.token as string
+  );
+  if (!decoded) {
+    return res.status(400).json({ error: 'invalid user token' });
+  }
+  if (!postgres || !discordBot) {
+    return res.sendStatus(500);
+  }
+  try {
+    const result = await postgres?.query(
+      `UPDATE account 
+        SET "discordUsername" = null, "discordDiscriminator" = null 
+        WHERE email = $1 RETURNING "discordUsername","discordDiscriminator"
+      `,
+      [decoded.email]
+    );
+    await discordBot.assignRole(
+      result.rows[0].discordUsername,
+      result.rows[0].discordDiscriminator,
+      true
+    );
+  } catch (e) {
+    console.error(e);
+    return res.sendStatus(500);
+  }
+  return res.status(200).json({});
 });
 
 // Data's already compressed so go before the compression middleware
@@ -290,6 +382,9 @@ app.delete('/deleteAccount', async (req, res) => {
   }
   if (postgres) {
     await postgres?.query('DELETE FROM room WHERE owner = $1', [decoded.uid]);
+    await postgres?.query('DELETE FROM account WHERE email = $1', [
+      decoded.email,
+    ]);
   }
   await deleteUser(decoded.uid);
   redisCount('deleteAccount');
@@ -303,12 +398,22 @@ app.get('/metadata', async (req, res) => {
   );
   let isCustomer = false;
   let isSubscriber = false;
+  let discordUsername = undefined;
+  let discordDiscriminator = undefined;
   if (decoded?.email) {
     const customer = await getCustomerByEmail(decoded.email);
     isSubscriber = Boolean(
       customer?.subscriptions?.data?.find((sub) => sub?.status === 'active')
     );
     isCustomer = Boolean(customer);
+    if (postgres) {
+      const result = await postgres?.query(
+        'SELECT "discordUsername", "discordDiscriminator" FROM account WHERE email = $1',
+        [decoded?.email]
+      );
+      discordUsername = result?.rows[0]?.discordUsername;
+      discordDiscriminator = result?.rows[0]?.discordDiscriminator;
+    }
   }
   let isVMPoolFull = null;
   try {
@@ -320,15 +425,19 @@ app.get('/metadata', async (req, res) => {
   } catch (e) {
     console.warn(e);
   }
+
   const beta =
     decoded?.email != null &&
     Boolean(config.BETA_USER_EMAILS.split(',').includes(decoded?.email));
   const streamPath = beta ? config.STREAM_PATH : undefined;
   const isCustomDomain = req.hostname === config.CUSTOM_SETTINGS_HOSTNAME;
+
   return res.json({
     isSubscriber,
     isCustomer,
     isVMPoolFull,
+    discordUsername,
+    discordDiscriminator,
     beta,
     streamPath,
     isCustomDomain,

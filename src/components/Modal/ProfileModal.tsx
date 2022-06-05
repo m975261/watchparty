@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, Button, Icon, Image } from 'semantic-ui-react';
+import { Modal, Button, Icon, Image, Popup } from 'semantic-ui-react';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import { serverPath } from '../../utils';
@@ -8,11 +8,38 @@ export class ProfileModal extends React.Component<{
   close: Function;
   user: firebase.User;
   userImage: string | null;
+  isSubscriber?: boolean;
+  discordUsername?: string;
+  discordDiscriminator?: string;
 }> {
   public state = {
     resetDisabled: false,
     verifyDisabled: false,
     deleteConfirmOpen: false,
+  };
+
+  authDiscord = () => {
+    const url = process.env.REACT_APP_DISCORD_AUTH_URL;
+    window.open(
+      url,
+      '_blank',
+      'toolbar=0,location=0,menubar=0,width=450,height=900'
+    );
+  };
+
+  deleteDiscord = async () => {
+    const token = await this.props.user.getIdToken();
+    await window.fetch(serverPath + '/discord/delete', {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        uid: this.props.user.uid,
+        token,
+      }),
+    });
+    window.location.reload();
   };
 
   onSignOut = () => {
@@ -116,6 +143,43 @@ export class ProfileModal extends React.Component<{
               gap: '10px',
             }}
           >
+            {this.props.discordUsername && this.props.discordDiscriminator ? (
+              <Button
+                icon
+                labelPosition="left"
+                fluid
+                color="red"
+                animated="fade"
+                onClick={this.deleteDiscord}
+              >
+                <Icon name="discord" />
+                <Button.Content visible>Unlink Discord Account</Button.Content>
+                <Button.Content
+                  hidden
+                >{`${this.props.discordUsername}#${this.props.discordDiscriminator}`}</Button.Content>
+              </Button>
+            ) : (
+              <React.Fragment>
+                {process.env.REACT_APP_DISCORD_AUTH_URL && (
+                  <Popup
+                    content="Link your Discord account to get assigned a subscriber role on our Discord server."
+                    trigger={
+                      <Button
+                        icon
+                        labelPosition="left"
+                        fluid
+                        color="orange"
+                        onClick={this.authDiscord}
+                        disabled={!this.props.isSubscriber}
+                      >
+                        <Icon name="discord" />
+                        Get Subscriber Role
+                      </Button>
+                    }
+                  />
+                )}
+              </React.Fragment>
+            )}
             <Button
               icon
               labelPosition="left"

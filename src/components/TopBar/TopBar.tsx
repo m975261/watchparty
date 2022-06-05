@@ -60,6 +60,9 @@ export class NewRoomButton extends React.Component<{
 type SignInButtonProps = {
   user: firebase.User | undefined;
   fluid?: boolean;
+  isSubscriber?: boolean;
+  discordUsername?: string;
+  discordDiscriminator?: string;
 };
 
 export class SignInButton extends React.Component<SignInButtonProps> {
@@ -107,6 +110,9 @@ export class SignInButton extends React.Component<SignInButtonProps> {
               user={this.props.user}
               userImage={this.state.userImage}
               close={() => this.setState({ isProfileOpen: false })}
+              isSubscriber={this.props.isSubscriber}
+              discordUsername={this.props.discordUsername}
+              discordDiscriminator={this.props.discordDiscriminator}
             />
           )}
         </div>
@@ -259,6 +265,8 @@ export class TopBar extends React.Component<{
   roomTitle?: string;
   roomDescription?: string;
   roomTitleColor?: string;
+  discordUsername?: string;
+  discordDiscriminator?: string;
 }> {
   render() {
     const subscribeButton = (
@@ -415,7 +423,14 @@ export class TopBar extends React.Component<{
               <ListRoomsButton user={this.props.user} />
             )}
             {subscribeButton}
-            {!this.props.hideSignin && <SignInButton user={this.props.user} />}
+            {!this.props.hideSignin && (
+              <SignInButton
+                user={this.props.user}
+                isSubscriber={this.props.isSubscriber}
+                discordUsername={this.props.discordUsername}
+                discordDiscriminator={this.props.discordDiscriminator}
+              />
+            )}
           </div>
         </div>
       </React.Fragment>
