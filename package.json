@@ -107,7 +107,7 @@
     "@types/uuid": "^9.0.7",
     "@types/webtorrent": "^0.109.7",
     "@types/youtube": "^0.0.50",
-    "husky": "^4.3.8",
+    "husky": "^9.1.7",
     "lint-staged": "^13.3.0",
     "prettier": "^3.2.4",
     "source-map-explorer": "^2.5.3",
